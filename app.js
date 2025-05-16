@@ -7,6 +7,8 @@ const errorHandler = require("./middleware/errorHandler");
 const indexRoutes = require("./routes/index");
 const apiRoutes = require("./routes/api");
 const initializeSocket = require("./sockets/index");
+const AzureServiceBus = require('./factory/azure.svcbus');
+const {glueService} = require('./services/glue.service');
 
 const app = express();
 const server = http.createServer(app);
@@ -44,7 +46,21 @@ server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
 
+azuresvcbus = new AzureServiceBus(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
+azuresvcbus.subscribe(glueService);
 
+// async function subscribeCallback(message) {
+//   try {
+//     if (!message || Object.keys(message).length === 0) {
+//       throw new Error("Received message is null or empty");
+//     }
+//     const task = JSON.parse(message);
+//     console.log(task.FileName)
+//     // Process the message here
+//   } catch (error) {
+//     console.error("Error in subscribeCallback:", error.message);
+//   }
+// };
 //example();
 // TestSign.example();
 

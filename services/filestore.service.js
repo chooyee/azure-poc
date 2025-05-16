@@ -70,6 +70,7 @@ const crypto = require("crypto");
  * @throws {Error} If an error occurs during file slicing or blob uploading.
  */
 class FileStorageService{
+
     constructor(fileName, fileBuffer) {
         this.fileBuffer= fileBuffer;
         this.fileName = fileName;
@@ -80,7 +81,7 @@ class FileStorageService{
     {
         const result = {};
         try{
-            const encryptionResult = await AzureKeyFactory.EncryptFile("test", this.fileBuffer);	
+            const encryptionResult = await AzureKeyFactory.EncryptFile(process.env.AZURE_KEY_NAME, this.fileBuffer);	
             const encryptedFileBuffer = Buffer.from(encryptionResult.encryptedFile, "base64");
             const chunks = await this.#chunkFile(encryptedFileBuffer);
             result.FileName = this.fileName;

@@ -2,8 +2,8 @@ const { BlobServiceClient } = require('@azure/storage-blob');
 const { DefaultAzureCredential } = require('@azure/identity');
 
 class AzureBlobFactory{
-    constructor(options = {}) {
-        console.log(options)
+
+    constructor(options = {}) {       
         if (!options.accountName) throw new Error('Azure storage account name is required');
         if (!options.containerName) throw new Error('Azure container name is required');
 
@@ -40,7 +40,7 @@ class AzureBlobFactory{
         }
         catch(error)
         {
-            throw new Error(`UploadBlob Failed: ${error}`);
+            throw new Error(`UploadBlob [${blobName}] Failed: ${error}`);
         }
     }
 
@@ -60,6 +60,28 @@ class AzureBlobFactory{
         const downloaded = await this._streamToString(response.readableStreamBody);
         console.log(`Blob "${blobName}" read.`);
         return downloaded;
+    }
+
+    // 📖 Read blob content as file buffer
+    async readBlobAsBuffer(blobName) {
+        try{
+            const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+            const response = await blockBlobClient.download();
+            const chunks = [];
+            return new Promise((resolve, reject) => {
+                response.readableStreamBody.on('data', (data) => {
+                    chunks.push(data);
+                });
+                response.readableStreamBody.on('end', () => {
+                    resolve(Buffer.concat(chunks));
+                });
+                response.readableStreamBody.on('error', reject);
+            });
+        }
+        catch(error)
+        {
+            throw new Error(`readBlobAsBuffer [${blobName}] Failed: ${error}`);
+        }
     }
 
     // ❌ Delete blob

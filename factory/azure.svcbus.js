@@ -42,7 +42,7 @@ class AzureServiceBus {
                     autoCompleteMessages: true
                 }
             );
-            console.log(`Subscribed to queue "${this.queueName}".`);
+            console.log(`AzureServiceBus: Subscribed to queue "${this.queueName}".`);
         } catch (err) {
             console.error("Error subscribing to queue:", err);
             throw err;

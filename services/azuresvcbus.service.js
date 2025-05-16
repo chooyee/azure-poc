@@ -18,6 +18,7 @@ class AzureSvcBusService{
             throw error;
         }
     }
+
 }
 
 module.exports = AzureSvcBusService;

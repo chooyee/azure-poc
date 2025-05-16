@@ -113,7 +113,7 @@ const AzureKeyFactory = {
         }
     },
 
-    async DecryptFile(keyName, encryptedSymmetricKeyB64, ivB64, encryptedFilePath) {
+    async DecryptFile(keyName, encryptedSymmetricKeyB64, ivB64, encryptedFileBuffer) {
         const vaultUrl = process.env.AZURE_KEY_VAULT_URL;
         if (!vaultUrl) throw new Error("AZURE_KEY_VAULT_URL is not set");
     
@@ -123,7 +123,7 @@ const AzureKeyFactory = {
             // Decode from base64
             const encryptedSymmetricKey = Buffer.from(encryptedSymmetricKeyB64, "base64");
             const iv = Buffer.from(ivB64, "base64");
-            const encryptedFile =  await fs.readFile(encryptedFilePath);
+            //const encryptedFileBuffer =  await fs.readFile(encryptedFilePath);
     
             // Initialize the key client and get the key by name
             const keyClient = new KeyClient(vaultUrl, new DefaultAzureCredential());
@@ -136,7 +136,7 @@ const AzureKeyFactory = {
     
             // 2. Decrypt the file using AES-256-CBC
             const decipher = crypto.createDecipheriv("aes-256-cbc", symmetricKey, iv);
-            const decryptedFilePart = decipher.update(encryptedFile);
+            const decryptedFilePart = decipher.update(encryptedFileBuffer);
             const decryptedFileFinal = decipher.final();
             const decryptedFileBuffer = Buffer.concat([decryptedFilePart, decryptedFileFinal]);
     
