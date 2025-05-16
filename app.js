@@ -46,8 +46,8 @@ server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
 
-azuresvcbus = new AzureServiceBus(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
-azuresvcbus.subscribe(glueService);
+// azuresvcbus = new AzureServiceBus(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
+// azuresvcbus.subscribe(glueService);
 
 // async function subscribeCallback(message) {
 //   try {
