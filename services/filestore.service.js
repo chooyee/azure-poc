@@ -79,6 +79,7 @@ class FileStorageService{
 
     async StoreSecretFile()
     {
+        console.debug("KeyName: " + process.env.AZURE_KEY_NAME);
         const result = {};
         try{
             const encryptionResult = await AzureKeyFactory.EncryptFile(process.env.AZURE_KEY_NAME, this.fileBuffer);	
