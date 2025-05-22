@@ -36,7 +36,7 @@ class AzureBlobFactory{
             const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
             const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
             await blockBlobClient.upload(buffer, buffer.length);
-            console.log(`Blob "${blobName}" uploaded.`);
+            //console.log(`Blob "${blobName}" uploaded.`);
         }
         catch(error)
         {

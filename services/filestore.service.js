@@ -1,8 +1,8 @@
 const AzureBlobFactory = require("../factory/azure.blob");
 const AzureKeyFactory = require("../factory/azure.keyvault");
-const fs = require("fs");
 const crypto = require("crypto");
-
+const {EncryptBuffer} = require('../services/pgp.service');
+const fs = require("fs");
 /**
  * Class representing a file storage service for handling encrypted file storage.
  *
@@ -79,17 +79,28 @@ class FileStorageService{
 
     async StoreSecretFile()
     {
-        console.debug("KeyName: " + process.env.AZURE_KEY_NAME);
+        console.debug("StoreSecretFile: KeyName: " + process.env.AZURE_KEY_NAME);
         const result = {};
         try{
-            const encryptionResult = await AzureKeyFactory.EncryptFile(process.env.AZURE_KEY_NAME, this.fileBuffer);	
-            const encryptedFileBuffer = Buffer.from(encryptionResult.encryptedFile, "base64");
-            const chunks = await this.#chunkFile(encryptedFileBuffer);
+            // const encryptionResult = await AzureKeyFactory.EncryptFile(process.env.AZURE_KEY_NAME, this.fileBuffer);	
+            // const encryptedFileBuffer = Buffer.from(encryptionResult.encryptedFile, "base64");
+
+            //===================================================================================================
+            // PGP Encryption
+            //===================================================================================================
+            const publicKeyStr= fs.readFileSync('./cert/pgp.cer');
+            const encryptedFileBuffer = await EncryptBuffer(this.fileBuffer, publicKeyStr.toString());
+            //===================================================================================================
+            // End PGP Encryption
+            //===================================================================================================
+
+            const chunks = await this.#chunkAndUploadFile(encryptedFileBuffer);
             result.FileName = this.fileName;
-            result.Key = encryptionResult.encryptedSymmetricKey;
-            result.IV = encryptionResult.iv;
+            // result.Key = encryptionResult.encryptedSymmetricKey;
+            // result.IV = encryptionResult.iv;
             result.Date = Date.now();
             result.FileChunks = chunks;
+            console.debug('StoreSecretFile done');
             return result;
         }
         catch(error)
@@ -106,22 +117,22 @@ class FileStorageService{
     
     #getFileSizePart(totalFileBytes)
     {
-        console.log(`total file bytes: ${totalFileBytes}`)
+        console.debug(`getFileSizePart: total file bytes: ${totalFileBytes}`)
         let totalBytesAlloc = 0;
         const parts = [];
         const maxPart = 10;
         let totalPart = maxPart;
         while (totalPart>0)
         {
-            console.log(`total file bytes: ${totalBytesAlloc}`)
+            console.debug(`getFileSizePart: total file bytes Allocated: ${totalBytesAlloc}`)
             const rnd = this.#getRndInteger(1, maxPart);
-            console.log(`Part: ${rnd}`)
+            console.debug(`getFileSizePart: Part Percentage: ${rnd}`)
             const partData = {};
     
             if (rnd< totalPart)
             {
                 const bytesAlloc =  Math.floor(totalFileBytes * (rnd/10));//calculate number of bytes to be slice
-                console.log(`bytesAlloc: ${bytesAlloc}`)
+                console.debug(`getFileSizePart: bytesAlloc: ${bytesAlloc}`)
                 
                 partData.bytesAlloc = bytesAlloc;//number of bytes to be slice
                 parts.push(partData);
@@ -134,13 +145,13 @@ class FileStorageService{
                 parts.push(partData);
                 totalPart = 0;
             }
-            console.log(`totalPart: ${totalPart}`)
+            console.debug(`getFileSizePart: totalPart: ${totalPart}`)
         }
-        console.log(parts);
+   
         return parts;
     }	
     
-    async #chunkFile(encryptedFile)
+    async #chunkAndUploadFile(encryptedFile)
     {
         const funcName = '#chunkFile';
         const chunksFiles = [];
@@ -161,9 +172,9 @@ class FileStorageService{
             let end =0;
             for(const chunk of chunks)
             {		
-                console.log(chunk)
+                //console.debug(chunk)
                 end = end + chunk.bytesAlloc; 
-                console.log(`start: ${start} - end: ${ end}`)
+                console.log(`${funcName}: start: ${start} - end: ${ end}`)
                 const fsSlice = encryptedFile.slice(start, end);
                 start = end;
     
@@ -172,10 +183,11 @@ class FileStorageService{
                 // console.log(filename);
                 // console.log(fsSlice.toString('base64'))
                 await azureBlob.uploadBlob(filename, fsSlice);
-                console.log(`${filename} upload successfull`)
+                console.debug(`${funcName}: ${filename} upload successfull`)
                 chunksFiles.push(filename);
                 // fs.writeFileSync(fileName, fsSlice);	
             }
+            console.debug(`${funcName} done`);
             return chunksFiles;
         }
         catch(error)

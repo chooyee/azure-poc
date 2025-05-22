@@ -48,7 +48,8 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 	try{
 		const fsService = new FileStorageService(req.file.originalname, req.file.buffer);
 		const result = await fsService.StoreSecretFile();
-		console.log(JSON.stringify(result));
+		
+		console.debug('StoreSecretFile Result:' + JSON.stringify(result));
 		const svcbus = new AzureSvcBusService(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
 		await svcbus.SendJson(JSON.stringify(result));
 		res.status(200).json(result);

@@ -2,6 +2,7 @@
 const AzureBlobFactory = require("../factory/azure.blob");
 const AzureKeyFactory = require("../factory/azure.keyvault");
 const fs = require("fs");
+const {DecryptBuffer} = require('../services/pgp.service');
 
 async function glueService(message) {
     console.info(`GlueService Started`)
@@ -11,7 +12,8 @@ async function glueService(message) {
         }
         const task = JSON.parse(message);
         console.info(`GlueService: [${task.FileName}]`)
-        
+        const outputPath = `./download/${task.FileName}`;
+
         const fileChunks = [];
         for(const chunk of task.FileChunks)
         {
@@ -19,9 +21,11 @@ async function glueService(message) {
         }
         // Process the message here
         const gluedFile = Buffer.concat(fileChunks);
-        clearFile = await AzureKeyFactory.DecryptFile(process.env.AZURE_KEY_NAME, task.Key,task.IV,gluedFile);
-        const outputPath = `./download/${task.FileName}`;
-        fs.writeFileSync(outputPath,  Buffer.from(clearFile, "base64"));
+        //clearFile = await AzureKeyFactory.DecryptFile(process.env.AZURE_KEY_NAME, task.Key,task.IV,gluedFile);
+        //fs.writeFileSync(outputPath,  Buffer.from(clearFile, "base64"));
+        const privateKey = fs.readFileSync('./cert/pgp.pem');
+        const outputBuffer = await DecryptBuffer(gluedFile, privateKey.toString(), ""); 
+        fs.writeFileSync(outputPath,  outputBuffer.data);
         console.info(`GlueService write to ${outputPath} successully!`);
 
     } catch (error) {

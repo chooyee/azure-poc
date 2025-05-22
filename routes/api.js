@@ -3,10 +3,9 @@ const router = express.Router();
 const fs = require("fs");
 const certManager = require("../factory/certManager");
 const { DefaultAzureCredential } = require("@azure/identity");
-const { SecretClient } = require("@azure/keyvault-secrets");
-const { KeyClient, CryptographyClient } = require("@azure/keyvault-keys");
+const { KeyClient } = require("@azure/keyvault-keys");
 const upload = require("../middleware/mod.upload");
-const { Client } = require("@microsoft/microsoft-graph-client");
+const {CreatePGPCert, EncryptBuffer, DecryptBuffer} = require('../services/pgp.service');
 
 // List keys from Azure Key Vault
 router.get("/api/v1/key/list", async (req, res) => {
@@ -87,6 +86,19 @@ router.get("/api/v1/cert/get/:id", (req, res) => {
 			res.status(500).send("Error reading certificate");
 		}
 	});
+});
+
+router.post("/api/v1/pgp/new", async (req, res) => {
+	console.log(req.body.UserIDs)
+	const options = {
+		userIds: req.body.UserIDs,
+		passphrase: req.body.passphrase,
+		curve: req.body.curve,
+	};
+	const pgpKey = await CreatePGPCert(options);
+	fs.writeFileSync('./cert/pgp.pem', pgpKey.privateKey);
+	fs.writeFileSync('./cert/pgp.cer', pgpKey.publicKey);
+	res.json(pgpKey);
 });
 
 module.exports = router;
