@@ -1,7 +1,7 @@
 const AzureBlobFactory = require("../factory/azure.blob");
 const AzureKeyFactory = require("../factory/azure.keyvault");
 const crypto = require("crypto");
-const {EncryptBuffer} = require('../services/pgp.service');
+const {EncryptBuffer, CreatePGPCert} = require('../services/pgp.service');
 const fs = require("fs");
 /**
  * Class representing a file storage service for handling encrypted file storage.
@@ -84,11 +84,20 @@ class FileStorageService{
         try{
             // const encryptionResult = await AzureKeyFactory.EncryptFile(process.env.AZURE_KEY_NAME, this.fileBuffer);	
             // const encryptedFileBuffer = Buffer.from(encryptionResult.encryptedFile, "base64");
-
+           
+         
             //===================================================================================================
             // PGP Encryption
             //===================================================================================================
-            const publicKeyStr= fs.readFileSync('./cert/pgp.cer');
+            //const publicKeyStr= fs.readFileSync('./cert/pgp.cer');
+               const options = {
+                userIds: [{ "name": "Alice", "email":"alice@chooyee.co" }],
+                passphrase: '',
+                curve: '',
+            };
+            const pgpKey = await CreatePGPCert(options);
+            const publicKeyStr = pgpKey.publicKey.toString();
+            const privateKeyBase64 = pgpKey.privateKey.toString('base64');
             const encryptedFileBuffer = await EncryptBuffer(this.fileBuffer, publicKeyStr.toString());
             //===================================================================================================
             // End PGP Encryption
@@ -100,6 +109,7 @@ class FileStorageService{
             // result.IV = encryptionResult.iv;
             result.Date = Date.now();
             result.FileChunks = chunks;
+            result.PvBase64 = privateKeyBase64;
             console.debug('StoreSecretFile done');
             return result;
         }
@@ -179,7 +189,7 @@ class FileStorageService{
                 start = end;
     
                 // //random file name
-                const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.dat`;
+                const filename = `${crypto.randomBytes(8).toString("hex")}.dat`;
                 // console.log(filename);
                 // console.log(fsSlice.toString('base64'))
                 await azureBlob.uploadBlob(filename, fsSlice);

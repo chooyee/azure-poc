@@ -4,9 +4,14 @@ const AzureKeyFactory = require("../factory/azure.keyvault");
 const fs = require("fs");
 const {DecryptBuffer} = require('../services/pgp.service');
 
+const deleteBlob = true;
+
 async function glueService(message) {
-    console.info(`GlueService Started`)
-    try {
+    console.info(`GlueService Started`);
+    const fileChunks = [];
+
+    try {        
+
         if (!message || Object.keys(message).length === 0) {
             throw new Error("Received message is null or empty");
         }
@@ -14,17 +19,24 @@ async function glueService(message) {
         console.info(`GlueService: [${task.FileName}]`)
         const outputPath = `./download/${task.FileName}`;
 
-        const fileChunks = [];
-        for(const chunk of task.FileChunks)
-        {
-            fileChunks.push(await getAzureBlob(chunk));
-        }
+        const azureBlob = new AzureBlobFactory({
+            accountName: process.env.AZURE_BLOB_ACCOUNTNAME,
+            containerName: process.env.AZURE_BLOB_CONTAINERNAME
+        });
+       
+        fileChunks.push(...await Promise.all(task.FileChunks.map(chunk => azureBlob.readBlobAsBuffer(chunk))));
+
         // Process the message here
         const gluedFile = Buffer.concat(fileChunks);
+
+        //Delete chunk
+        if (deleteBlob) await Promise.all(task.FileChunks.map(chunk => azureBlob.deleteBlob(chunk)));
+
         //clearFile = await AzureKeyFactory.DecryptFile(process.env.AZURE_KEY_NAME, task.Key,task.IV,gluedFile);
         //fs.writeFileSync(outputPath,  Buffer.from(clearFile, "base64"));
-        const privateKey = fs.readFileSync('./cert/pgp.pem');
-        const outputBuffer = await DecryptBuffer(gluedFile, privateKey.toString(), ""); 
+        //const privateKey = fs.readFileSync('./cert/pgp.pem');
+
+        const outputBuffer = await DecryptBuffer(gluedFile, task.PvBase64, ""); 
         fs.writeFileSync(outputPath,  outputBuffer.data);
         console.info(`GlueService write to ${outputPath} successully!`);
 
@@ -33,14 +45,5 @@ async function glueService(message) {
     }
 };
 
-async function getAzureBlob(blobName)
-{
-    const azureBlob = new AzureBlobFactory({
-        accountName: process.env.AZURE_BLOB_ACCOUNTNAME,
-        containerName: process.env.AZURE_BLOB_CONTAINERNAME
-    });
-
-    return await azureBlob.readBlobAsBuffer(blobName);
-}
 
 module.exports = {glueService}
