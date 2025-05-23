@@ -21,12 +21,16 @@ class AzureBlobFactory{
 
     // ✅ Ensure container exists
     async initContainer() {
-        const exists = await this.containerClient.exists();
-        if (!exists) {
-            await this.containerClient.create();
-            console.log(`Container "${this.containerClient.containerName}" created.`);
-        } else {
-            console.log(`Container "${this.containerClient.containerName}" already exists.`);
+        try {
+            const exists = await this.containerClient.exists();
+            if (!exists) {
+                await this.containerClient.create();
+                console.log(`Container "${this.containerClient.containerName}" created.`);
+            } else {
+                console.log(`Container "${this.containerClient.containerName}" already exists.`);
+            }
+        } catch (error) {
+            throw new Error(`initContainer [${this.options.containerName}] Failed: ${error.message}`);
         }
     }
 
@@ -45,50 +49,70 @@ class AzureBlobFactory{
     }
 
     async listBlobs() {
-        const blobs = [];
-        for await (const blob of this.containerClient.listBlobsFlat()) {
-            blobs.push(blob.name);
+        try {
+            const blobs = [];
+            for await (const blob of this.containerClient.listBlobsFlat()) {
+                blobs.push(blob.name);
+            }
+            console.log(`Container contains: ${blobs.join(', ')}`);
+            return blobs;
+        } catch (error) {
+            throw new Error(`listBlobs [${this.options.containerName}] Failed: ${error.message}`);
         }
-        console.log(`Container contains: ${blobs.join(', ')}`);
-        return blobs;
     }
 
     // 📖 Read blob content
     async readBlob(blobName) {
-        const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
-        const response = await blockBlobClient.download();
-        const downloaded = await this._streamToString(response.readableStreamBody);
-        console.log(`Blob "${blobName}" read.`);
-        return downloaded;
+        try {
+            const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+            const response = await blockBlobClient.download(); // This can throw
+            // _streamToString can also throw (e.g. if stream emits 'error')
+            const downloaded = await this._streamToString(response.readableStreamBody); 
+            console.log(`Blob "${blobName}" read.`);
+            return downloaded;
+        } catch (error) {
+            // Check if the error is already prefixed by _streamToString or if it's a new error
+            if (error.message && error.message.startsWith(`_streamToString Failed:`)) {
+                 throw new Error(`readBlob [${blobName}] Failed: ${error.message}`);
+            }
+            throw new Error(`readBlob [${blobName}] Failed: ${error.message}`);
+        }
     }
 
     // 📖 Read blob content as file buffer
     async readBlobAsBuffer(blobName) {
-        try{
+        try {
             const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
-            const response = await blockBlobClient.download();
+            const response = await blockBlobClient.download(); // This can throw
             const chunks = [];
-            return new Promise((resolve, reject) => {
+            // Await the promise to ensure its rejection is caught by the outer try/catch
+            return await new Promise((resolve, reject) => { 
                 response.readableStreamBody.on('data', (data) => {
                     chunks.push(data);
                 });
                 response.readableStreamBody.on('end', () => {
                     resolve(Buffer.concat(chunks));
                 });
-                response.readableStreamBody.on('error', reject);
+                response.readableStreamBody.on('error', (streamError) => {
+                    // Reject with the original stream error
+                    reject(streamError); 
+                });
             });
-        }
-        catch(error)
-        {
-            throw new Error(`readBlobAsBuffer [${blobName}] Failed: ${error}`);
+        } catch (error) {
+            // This will now catch errors from download() or the stream directly and prefix them
+            throw new Error(`readBlobAsBuffer [${blobName}] Failed: ${error.message}`);
         }
     }
 
     // ❌ Delete blob
     async deleteBlob(blobName) {
-        const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
-        await blockBlobClient.deleteIfExists();
-        console.log(`Blob "${blobName}" deleted (if it existed).`);
+        try {
+            const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+            await blockBlobClient.deleteIfExists();
+            console.log(`Blob "${blobName}" deleted (if it existed).`);
+        } catch (error) {
+            throw new Error(`deleteBlob [${blobName}] Failed: ${error.message}`);
+        }
     }
 
     // 🔗 Get blob URL
@@ -107,7 +131,10 @@ class AzureBlobFactory{
             readableStream.on('end', () => {
                 resolve(Buffer.concat(chunks).toString('utf8'));
             });
-            readableStream.on('error', reject);
+            // Rejects the promise if a stream error occurs
+            readableStream.on('error', (streamError) => {
+                reject(new Error(`_streamToString Failed: ${streamError.message}`));
+            });
         });
     }
 }

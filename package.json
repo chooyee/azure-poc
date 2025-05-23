@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon app.js"
+    "start": "nodemon app.js",
+    "test": "jest"
   },
   "author": "Lee Choo Yee",
   "license": "ISC",
@@ -38,6 +39,7 @@
     "gulp-clean-css": "^4.3.0",
     "gulp-concat": "^2.6.1",
     "gulp-minify": "^3.1.0",
+    "jest": "^29.7.0",
     "nodemon": "^3.1.7"
   }
 }
