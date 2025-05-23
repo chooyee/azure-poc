@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const fs = require("fs");
-const certManager = require("../factory/certManager");
+
 const { DefaultAzureCredential } = require("@azure/identity");
 const { KeyClient } = require("@azure/keyvault-keys");
 const upload = require("../middleware/mod.upload");
@@ -60,33 +60,6 @@ router.post("/api/v1/key/new", async (req, res) => {
 
 });
 
-router.post("/api/v1/cert/new", (req, res) => {
-	const certGen = new certManager({
-		id: req.body.id,
-		commonName: req.body.commonName,
-		validityYears: req.body.validityYears,
-		altNames: req.body.altNames,
-	});
-
-	const certData = certGen.generate();
-	certGen.saveToFiles("./certs/");
-	console.log("Certificates saved successfully");
-	res.status(200).send({ status: "success", message: certData.publicKey });
-});
-
-router.get("/api/v1/cert/get/:id", (req, res) => {
-	const filePath = `./certs/${req.params.id}/public.key`;
-	fs.readFile(filePath, { encoding: "utf-8" }, (err, data) => {
-		if (!err) {
-			res.writeHead(200, { "Content-Type": "text" });
-			res.write(data);
-			res.end();
-		} else {
-			console.log(err);
-			res.status(500).send("Error reading certificate");
-		}
-	});
-});
 
 router.post("/api/v1/pgp/new", async (req, res) => {
 	console.log(req.body.UserIDs)
