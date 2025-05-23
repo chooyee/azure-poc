@@ -9,24 +9,32 @@ class RSAEncryption {
         
         // If private key file path is provided, load it
         if (options.privateKeyFile) {
-            this.loadPrivateKeySync(options.privateKeyFile);
+            // Pass the password from options to loadPrivateKeySync
+            this.loadPrivateKeySync(options.privateKeyFile, options.privateKeyPassword);
         } else {
            throw new Error('Private key file path is required');
         }
     }
 
-    // Asynchronous method to load private key from file
+    // Method to load private key from file (made synchronous as per original file naming)
     loadPrivateKeySync(filePath, password) {
         const privateKeyPem = fsSync.readFileSync(filePath, 'utf8');
-        this.keyPair = {
-            privateKey: forge.pki.decryptRsaPrivateKey(privateKeyPem, password),
-            publicKey: null
-        };
-        if (!this.keyPair.privateKey) {
+        const privateKeyObject = forge.pki.decryptRsaPrivateKey(privateKeyPem, password);
+
+        if (privateKeyObject) {
+            // Derive and set the public key using the components of the private key
+            const publicKeyObject = forge.pki.setRsaPublicKey(privateKeyObject.n, privateKeyObject.e);
+            this.keyPair = {
+                privateKey: privateKeyObject,
+                publicKey: publicKeyObject
+            };
+        } else {
+            // Handle case where privateKeyObject is null (decryption failed)
+            this.keyPair = null; // Explicitly set to null
             throw new Error('Failed to decrypt private key - wrong password?');
         }
-        // ... rest of the code
     }
+
     encrypt(plaintext) {
         try {
             const buffer = forge.util.createBuffer(
