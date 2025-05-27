@@ -91,7 +91,7 @@ class FileStorageService{
             //===================================================================================================
             //const publicKeyStr= fs.readFileSync('./cert/pgp.cer');
                const options = {
-                userIds: [{ "name": "Alice", "email":"alice@chooyee.co" }],
+                userIDs: [{ "name": "Alice", "email":"alice@chooyee.co" }],
                 passphrase: '',
                 curve: '',
             };

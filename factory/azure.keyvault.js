@@ -70,7 +70,7 @@ const AzureKeyFactory = {
             return keys;
         }
         catch (error) {
-            console.error("Error listing keys:", error);
+            console.error("AzureKeyFactory:Error listing keys:", error);
             throw error;
         }
     },
@@ -108,7 +108,7 @@ const AzureKeyFactory = {
                 encryptedFile: encryptedFile.toString("base64")
             };
         } catch (error) {
-            console.error("Error encrypting file:", error);
+            console.error("AzureKeyFactory:Error encrypting file:", error);
             throw error;
         }
     },
@@ -145,7 +145,7 @@ const AzureKeyFactory = {
             return decryptedFileBuffer;
     
         } catch (error) {
-            console.error("Error decrypting file:", error);
+            console.error("AzureKeyFactory:Error decrypting file:", error);
             throw error;
         }
     }

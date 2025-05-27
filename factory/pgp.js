@@ -17,9 +17,9 @@ class PGP {
      */
     async createCert(options) {
         try {
-            const { userIds, passphrase, curve = 'ed25519' } = options;
+            const { userIDs, passphrase, curve = 'ed25519' } = options;
             const key = await openpgp.generateKey({
-                userIDs: userIds,
+                userIDs,
                 curve,
                 passphrase,
             });
@@ -96,7 +96,7 @@ class PGP {
         try {
             privKeyObject = await openpgp.readKey({ armoredKey: privateKey });
             if (passphrase.length>0) {
-               await privateKey.decrypt(passphrase);
+               await privKeyObject.decrypt(passphrase);
             }
             
         } catch (error) {

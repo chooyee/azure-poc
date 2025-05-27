@@ -64,7 +64,7 @@ router.post("/api/v1/key/new", async (req, res) => {
 router.post("/api/v1/pgp/new", async (req, res) => {
 	console.log(req.body.UserIDs)
 	const options = {
-		userIds: req.body.UserIDs,
+		userIDs: req.body.UserIDs,
 		passphrase: req.body.passphrase,
 		curve: req.body.curve,
 	};

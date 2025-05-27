@@ -36,11 +36,11 @@ class AzureBlobFactory{
             const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
             const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
             await blockBlobClient.upload(buffer, buffer.length);
-            //console.log(`Blob "${blobName}" uploaded.`);
+            console.debug(`AzureBlobFactory:Blob "${blobName}" uploaded.`);
         }
         catch(error)
         {
-            throw new Error(`UploadBlob [${blobName}] Failed: ${error}`);
+            throw new Error(`AzureBlobFactory:UploadBlob [${blobName}] Failed: ${error}`);
         }
     }
 
@@ -49,7 +49,7 @@ class AzureBlobFactory{
         for await (const blob of this.containerClient.listBlobsFlat()) {
             blobs.push(blob.name);
         }
-        console.log(`Container contains: ${blobs.join(', ')}`);
+        console.debug(`AzureBlobFactory:Container contains: ${blobs.join(', ')}`);
         return blobs;
     }
 
@@ -58,7 +58,7 @@ class AzureBlobFactory{
         const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
         const response = await blockBlobClient.download();
         const downloaded = await this._streamToString(response.readableStreamBody);
-        console.log(`Blob "${blobName}" read.`);
+        console.debug(`AzureBlobFactory:Blob "${blobName}" read.`);
         return downloaded;
     }
 
@@ -80,7 +80,7 @@ class AzureBlobFactory{
         }
         catch(error)
         {
-            throw new Error(`readBlobAsBuffer [${blobName}] Failed: ${error}`);
+            throw new Error(`AzureBlobFactory:readBlobAsBuffer [${blobName}] Failed: ${error}`);
         }
     }
 
@@ -88,7 +88,7 @@ class AzureBlobFactory{
     async deleteBlob(blobName) {
         const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
         await blockBlobClient.deleteIfExists();
-        console.log(`Blob "${blobName}" deleted (if it existed).`);
+        console.debug(`AzureBlobFactory:Blob "${blobName}" deleted (if it existed).`);
     }
 
     // 🔗 Get blob URL
