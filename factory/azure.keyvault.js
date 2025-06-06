@@ -56,6 +56,7 @@ const crypto = require("crypto");
 
 const AzureKeyFactory = {
     async List() {
+        console.log(process.env.AZURE_KEY_VAULT_URL)
         const vaultUrl = process.env.AZURE_KEY_VAULT_URL;
         try {
             if (!vaultUrl) throw new Error("AZURE_KEY_VAULT_URL is not set");
