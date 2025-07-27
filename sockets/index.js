@@ -328,12 +328,19 @@ module.exports = (io) => {
                         messageState.iv,
                         clientData.key);
 
-                    await fs.writeFile(
-                        `./uploads/${messageState.filename}`,
-                        Buffer.from(secretFileArrayBuffer)
-                    );
+                    // await fs.writeFile(
+                    //     `./uploads/${messageState.filename}`,
+                    //     Buffer.from(secretFileArrayBuffer)
+                    // );
+
+                    const fsService = new FileStorageService(messageState.filename, Buffer.from(secretFileArrayBuffer));
+                    const result = await fsService.StoreSecretFile();
+                    
+                    console.debug('StoreSecretFile Result:' + JSON.stringify(result));
+                    const svcbus = new AzureSvcBusService(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
+                    await svcbus.SendJson(JSON.stringify(result));
                 
-                console.log("File saved");
+                    console.log("File saved");
                     console.log(`Fully reassembled and decrypted message from ${senderName} (ID: ${messageId}):`);
 
                     // Clean up the message state
