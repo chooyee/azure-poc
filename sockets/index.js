@@ -2,6 +2,8 @@ const fs = require("fs").promises;
 const path = require("path");
 const MLKemEncryption = require("../factory/mlkem.js");
 const AESEncryption = require("../factory/aes");
+const FileStorageService = require('../services/filestore.service');
+const AzureSvcBusService = require('../services/azuresvcbus.service');
 // const { DefaultAzureCredential } = require("@azure/identity");
 // const { SecretClient } = require("@azure/keyvault-secrets");
 // const { KeyClient } = require("@azure/keyvault-keys");
@@ -27,6 +29,7 @@ module.exports = (io) => {
         });
     });
 
+  
     async function emitMonitor(socketId, event, data, received = true) {
         const timestamp = new Date().toISOString();
         const messageData = {
@@ -94,14 +97,15 @@ module.exports = (io) => {
             
             return result;
         };
-        socket.on("handshake", async (data) => {
+
+        socket.on("handshake", async (data, callback) => {
             console.log(`Handshake received: ${data.senderName}, ${data.bonShared}`);
             
             const { publicKey, secretKey } = await MLKemEncryption.generateKeyPair();
-            console.log("Public Key:", publicKey);
-            console.log("Secret Key:", secretKey);
+            // console.log("Public Key:", publicKey);
+            // console.log("Secret Key:", secretKey);
           
-            // Store the secretKey in Azure Key Vault
+            /* Store the secretKey in Azure Key Vault
             // try {
             //     const vaultUrl = process.env.AZURE_KEY_VAULT_URL;  // Ensure you set this environment variable
             //     const credential = new DefaultAzureCredential();
@@ -124,6 +128,7 @@ module.exports = (io) => {
             // } catch (err) {
             // console.error("Failed to store secretKey in Azure Key Vault:", err);
             // }
+            */
 
             const clientId = socket.id;
             clients.set(clientId, {
@@ -132,9 +137,11 @@ module.exports = (io) => {
                 chunks: [], // Initialize chunks array for file transfer
                 publicKey: publicKey,
                 secretKey: secretKey,
-            });
-           
-            socket.emit("handshake_ack", { status: "success", publicKey: publicKey });
+                incomingMessages: new Map()
+            });           
+         
+            callback({ status: "success", publicKey: publicKey });
+            //socket.emit("handshake_ack", { status: "success", publicKey: publicKey });
         });
 
         socket.on("secretmsg", async (data, callback) => {
@@ -179,6 +186,7 @@ module.exports = (io) => {
                 return;
             };
 
+        
             MLKemEncryption.decrypt(data.cipherText, clientData.secretKey).then((sharedSecret) => {
                 console.log("Shared Secret: " + sharedSecret);
                 clientData.key = sharedSecret;
@@ -190,6 +198,7 @@ module.exports = (io) => {
         });
 
         socket.on("secretfile", async (data, callback) => {
+            console.debug('secretfile: ' + socket.id)
             const eventId = "secretfile";
             const clientId = socket.id;
             let callBackResult = {};
@@ -218,13 +227,20 @@ module.exports = (io) => {
                 );
                 
                 console.log("File saved");
-                //socket.emit("file_received_ack", { status: "success", fileName: filename });
+              
+                const fsService = new FileStorageService(filename, Buffer.from(secretFileArrayBuffer));
+                const result = await fsService.StoreSecretFile();
+                
+                console.debug('StoreSecretFile Result:' + JSON.stringify(result));
+                const svcbus = new AzureSvcBusService(process.env.AZURE_SVCBUS_NAMESPACE, process.env.AZURE_SVCBUS_QUEUE);
+                await svcbus.SendJson(JSON.stringify(result));  
+
                 callbackResult = {status:"success", fileName: filename };
                 callback(callbackResult);
                 emitMonitor(socket.id, `${eventId}_ack`, callbackResult);
             } catch (error) {
                 console.error("Error processing file:", error);
-                socket.emit("error", { message: "Failed to process file" });
+                socket.emit("error", { status:"failed",message: "Failed to process file" });
             }
         });
 
@@ -241,6 +257,100 @@ module.exports = (io) => {
                 : Buffer.from(data.chunk, "base64");
             clientData.chunks.push(chunk);
             console.log(`Received chunk #${clientData.chunks.length}`);
+        });
+
+         socket.on("secretChunk",  async ({ senderName, secretChunk }, callback) => {
+            const clientId = socket.id;
+            const clientData = clients.get(clientId);
+            if (!clientData) {
+                socket.emit("error", { message: "Handshake required" });
+                return;
+            }
+            console.debug('secretChunk')
+            incomingMessages =  clientData.incomingMessages;
+            
+            const { messageId, iv, chunkIndex, totalChunks, isLastChunk, encryptedChunkData,filename } = secretChunk;
+
+            console.log(secretChunk)
+            // Ensure encryptedChunkData is a Buffer on the server side if it comes as ArrayBuffer/Blob
+            const chunkBuffer = Buffer.from(encryptedChunkData);
+
+
+            if (!incomingMessages.has(messageId)) {
+                incomingMessages.set(messageId, {
+                    chunks: new Map(), // Use a Map to store chunks by index for easy reassembly
+                    totalChunks: totalChunks,
+                    receivedCount: 0,
+                    iv: Buffer.from(iv), // Store the IV as a Buffer
+                    senderName: senderName,
+                    filename:filename,
+                    createdAt: Date.now() // For potential timeout/cleanup
+                });
+                console.log(`New message transfer started for ID: ${messageId} from ${senderName}`);
+            }
+
+            const messageState = incomingMessages.get(messageId);
+
+            // Store the chunk. Using a Map ensures we handle potential out-of-order delivery
+            // though Socket.IO typically guarantees order for single-socket messages.
+            if (!messageState.chunks.has(chunkIndex)) {
+                messageState.chunks.set(chunkIndex, chunkBuffer);
+                messageState.receivedCount++;
+            } else {
+                // Already received this chunk, acknowledge but do nothing else
+                callback({ status: 'success', message: `Chunk ${chunkIndex + 1}/${totalChunks} already received.` });
+                return;
+            }
+
+            try {
+                if (messageState.receivedCount === messageState.totalChunks && messageState.chunks.size === messageState.totalChunks) {
+                    // All chunks received and accounted for, reassemble and decrypt the entire message
+                    console.log(`All chunks received for message ID: ${messageId}. Reassembling...`);
+
+                    const sortedChunks = [];
+                    for (let i = 0; i < messageState.totalChunks; i++) {
+                        if (!messageState.chunks.has(i)) {
+                            // This should ideally not happen if receivedCount matches totalChunks
+                            // but is a good safeguard against missing chunks or logic errors.
+                            console.error(`Missing chunk ${i} for message ID: ${messageId}`);
+                            callback({ status: 'error', message: `Missing chunk ${i}. Reassembly failed.` });
+                            incomingMessages.delete(messageId); // Clean up
+                            return;
+                        }
+                        sortedChunks.push(messageState.chunks.get(i));
+                    }
+
+                    const fullEncryptedData = Buffer.concat(sortedChunks);
+
+                    // --- Decrypt the entire message once ---
+                    const secretFileArrayBuffer = await AESEncryption.decryptFile(
+                        fullEncryptedData,
+                        messageState.iv,
+                        clientData.key);
+
+                    await fs.writeFile(
+                        `./uploads/${messageState.filename}`,
+                        Buffer.from(secretFileArrayBuffer)
+                    );
+                
+                console.log("File saved");
+                    console.log(`Fully reassembled and decrypted message from ${senderName} (ID: ${messageId}):`);
+
+                    // Clean up the message state
+                    incomingMessages.delete(messageId);
+                    callback({ status: 'success', message: 'Full message reassembled and decrypted.' });
+
+                  
+                } else {
+                    // Not all chunks received yet, just acknowledge current chunk
+                    callback({ status: 'success', message: `Chunk ${chunkIndex + 1}/${totalChunks} received.` });
+                }
+            } catch (error) {
+                console.error('Error handling secret chunk or decryption:', error);
+                callback({ status: 'error', message: 'Failed to process chunk or decrypt message.' });
+                // Consider cleaning up partial message state on error
+                incomingMessages.delete(messageId);
+            }
         });
 
         socket.on("end", () => {

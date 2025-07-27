@@ -7,6 +7,7 @@ const DOM = {
 	fileInput: document.getElementById('file'),
 	btnSubmit: document.getElementById('btnSubmit'),
 	btnHandshake: document.getElementById('btnHandshake'),
+	btnBobshared: document.getElementById('btnBobshared'),
 	txtuserid: document.getElementById('txtuserid'),
 	btnSendMsg: document.getElementById('btnSendMsg'),
 	txtMsg: document.getElementById('txtMsg'),
@@ -17,6 +18,7 @@ const DOM = {
 
 const CONFIG = {
 	// Add any configuration constants here
+	CHUNK_SIZE : 128 * 1024 // 16 KB
 };
 
 /**
@@ -314,15 +316,6 @@ socket.on('connect', () => {
 	utils.logSysMsg('Connected to server');
 });
 
-socket.on('handshake_ack', async (data) => {
-	console.log('Handshake acknowledged:', data);
-	state.publicKey = data.publicKey;
-	utils.logSysMsg('Server->Handshake acknowledged: ' + data);
-	// Uncomment below if you want to perform encapsulation on handshake acknowledgment
-	// const { cipherText, sharedSecret } = await MLKemEncryption.encrypt(data.publicKey);
-	// state.bobShared = sharedSecret;
-	// socket.emit('bobshared', { cipherText: cipherText });
-});
 
 socket.on('error', (data) => {
 	console.error('Server error:', data.message);
@@ -355,24 +348,100 @@ const EventHandler = {
 	},
 
 	async uploadFileHandler(file) {
+
+		const CHUNK_SIZE = CONFIG.CHUNK_SIZE;
+
 		if (await this.encapsulateHandler()) {
-			console.log('Uploading file:', file.name);
-			utils.logSysMsg('Client->Uploading file: ' + file.name);
-			const secretFile = await AESEncryption.encryptFile(file, state.bobShared);
-			console.log(secretFile);
-			const response = await socket.emitWithAck('secretfile', { senderName: DOM.txtuserid.value, secretFile: secretFile });
-			utils.logSysMsg('Client->secretfile: sent: ' + secretFile.encryptedData);
-			if (response.status === 'success') {
-				utils.logSysMsg(`Server->File received acknowledged: ${secretFile.fileName}`);
-			} else {
-				utils.logSysMsg(`Server->Uploading file failed. ${response.message}`);
+			try{
+				console.log('Uploading file:', file.name);
+				utils.logSysMsg('Client->Uploading file: ' + file.name);
+				const encryptedResult = await AESEncryption.encryptFile(file, state.bobShared);
+			 	const encryptedDataBuffer = new Uint8Array(encryptedResult.encryptedData); // Ensure it's a Uint8Array for slicing
+				const ivForWholeMessage = encryptedResult.iv; // The single IV for the entire message
+				const filename = encryptedResult.fileName;
+				// Generate a unique ID for this entire message transfer
+				// This is crucial for the server to reassemble correctly, especially with concurrent transfers
+				const messageId = crypto.randomUUID(); // Requires Node.js 14+ or browser environment (window.crypto.randomUUID)
+				// Or use a UUID library like 'uuid' (e.g., import { v4 as uuidv4 } from 'uuid'; uuidv4();)
+
+				const totalChunks = Math.ceil(encryptedDataBuffer.byteLength / CHUNK_SIZE);
+				let offset = 0;
+				let chunkIndex = 0;
+
+    			utils.logSysMsg(`Client->Preparing to send ${totalChunks} chunks for message ID: ${messageId}`);
+
+				while (offset < encryptedDataBuffer.byteLength) {
+					// --- STEP 2: Chunk the *encrypted* data ---
+					const chunk = encryptedDataBuffer.slice(offset, Math.min(offset + CHUNK_SIZE, encryptedDataBuffer.byteLength));
+					const isLastChunk = (offset + CHUNK_SIZE) >= encryptedDataBuffer.byteLength;
+
+					// Construct the payload for each chunk
+					const chunkPayload = {
+						messageId: messageId,             // Unique ID for the entire message
+						iv: ivForWholeMessage,            // The single IV for decryption
+						chunkIndex: chunkIndex,
+						totalChunks: totalChunks,
+						isLastChunk: isLastChunk,
+						encryptedChunkData: chunk.buffer,  // Send the ArrayBuffer portion of the chunk
+						filename:filename
+					};
+
+					console.log(`Sending chunk ${chunkIndex + 1}/${totalChunks} for message ID: ${messageId}`);
+					const response = await socket.emitWithAck('secretChunk', {
+						senderName: DOM.txtuserid.value,
+						secretChunk: chunkPayload
+					});
+
+					if (response.status === 'success') {
+						utils.logSysMsg(`Server->Chunk ${chunkIndex + 1}/${totalChunks} for ${messageId} received acknowledged`);
+					} else {
+						utils.logSysMsg(`Server->Send chunk ${chunkIndex + 1}/${totalChunks} for ${messageId} failed. ${response.message}`);
+						// Implement retry logic or error handling if a chunk fails
+						throw new Error(`Chunk ${chunkIndex + 1} for ${messageId} failed: ${response.message}`);
+					}
+
+					offset += CHUNK_SIZE;
+					chunkIndex++;
+				}
+
+			}
+			catch(error)
+			{
+				console.error(error);
 			}
 		}
 	},
 
 	async handshakeHandler() {
-		socket.emit('handshake', { senderName: DOM.txtuserid.value });
 		utils.logSysMsg('Client->handshake: ' + DOM.txtuserid.value);
+		socket.emit('handshake', { senderName: DOM.txtuserid.value }, (response)=>{
+			console.log(response)
+			 if (response.status === 'success') {
+				console.log('Handshake acknowledged:');
+				state.publicKey = response.publicKey;
+				utils.logSysMsg('Server->Handshake acknowledged: MLKEM public key received');
+			 } else {
+				console.error('Key exchange failed:', response.message);
+				// Handle the error: show an error message to the user,
+				// retry the operation, etc.
+			}			
+		});
+	},
+
+	async bobsharedHandler(){
+		const { cipherText, sharedSecret } = await MLKemEncryption.encrypt(state.publicKey);
+		state.bobShared = sharedSecret;
+		const response = await socket.emitWithAck('bobshared', { cipherText: cipherText });
+		if (response.status === 'success') {
+			console.log('Key exchange successful! Ready to proceed with secure communication.');
+			console.log('Cipher text received by server:', response);
+			utils.logSysMsg('Key exchange successful! Ready to proceed with secure communication.');
+		} else {
+			console.error('Key exchange failed:', response.message);
+			// Handle the error: show an error message to the user,
+			// retry the operation, etc.
+		}
+	
 	},
 
 	async sendMsgHandler(msg) {
@@ -399,22 +468,29 @@ const EventHandler = {
 function initializeApp() {
 	DOM.btnSubmit.addEventListener('click', (e) => {
 		e.preventDefault();
-		//EventHandler.uploadFileHandler(DOM.fileInput.files[0]);
-		ApiService.uploadFile(DOM.fileInput.files[0])
-			.then((response) => {
-				console.log('File uploaded successfully:', response);
-				utils.logSysMsg('File uploaded successfully: ' + DOM.fileInput.files[0].name);
-			})
-			.catch((error) => {
-				console.error('Error uploading file:', error);
-				utils.logSysMsg('Error uploading file: ' + error.message);
-			});
-		utils.logSysMsg('Client->Upload file: ' + DOM.fileInput.files[0].name);
+		EventHandler.uploadFileHandler(DOM.fileInput.files[0]);
+		// ApiService.uploadFile(DOM.fileInput.files[0])
+		// 	.then((response) => {
+		// 		console.log('File uploaded successfully:', response);
+		// 		utils.logSysMsg('File uploaded successfully: ' + DOM.fileInput.files[0].name);
+		// 	})
+		// 	.catch((error) => {
+		// 		console.error('Error uploading file:', error);
+		// 		utils.logSysMsg('Error uploading file: ' + error.message);
+		// 	});
+		// utils.logSysMsg('Client->Upload file: ' + DOM.fileInput.files[0].name);
 	});
 
+	/* 1.Perform handshake to get MlKem public key*/
 	DOM.btnHandshake.addEventListener('click', (e) => {
 		e.preventDefault();
 		EventHandler.handshakeHandler();
+	});
+
+	/* 2. Use the public key to generate cipher text and send back to server*/
+	DOM.btnBobshared.addEventListener('click', (e) => {
+		e.preventDefault();
+		EventHandler.bobsharedHandler();
 	});
 
 	DOM.btnSendMsg.addEventListener('click', (e) => {
