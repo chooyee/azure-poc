@@ -3,6 +3,7 @@ const router = express.Router();
 const upload = require("../middleware/mod.upload");
 const FileStorageService = require('../services/filestore.service');
 const AzureSvcBusService = require('../services/azuresvcbus.service');
+const MailService = require('../services/mail.service');
 
 router.get("/ping", (req, res) => {
 	res.status(200).send("pong");
@@ -22,6 +23,16 @@ router.get("/server", (req, res) => {
 			? `${req.protocol}://${req.header("host")}`
 			: `${req.protocol}://${req.hostname}`;
 	res.render("server2");
+});
+
+router.get("/email", async (req, res) => {
+	const recipients = ['chooyee@gmail.com'];
+	const subject = 'Test Email';
+	const messagePlainText = 'Hello World Email';
+	const mailSvc = new MailService();
+	//const { recipients, subject, messageHtml, messagePlainText } = options;
+	const result = await mailSvc.sendEmail({recipients:recipients, subject:subject, messagePlainText:messagePlainText});
+	res.status(200).json(result);
 });
 
 router.get("/cert", (req, res) => {
